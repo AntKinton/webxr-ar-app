@@ -59,18 +59,31 @@ async function onStartAR() {
     try {
         console.log("Iniciando sesión AR...");
 
-        // ⚠️ Esperar a que el contexto sea XR compatible
+        // Ensure WebGL context is XR compatible
         await renderer.getContext().makeXRCompatible();
 
         const session = await navigator.xr.requestSession('immersive-ar', {
             requiredFeatures: ['local', 'hit-test']
         });
 
+        // Create and configure WebGL layer for WebXR
+        const gl = renderer.getContext();
+        const xrLayer = new XRWebGLLayer(session, gl, {
+            alpha: true,
+            antialias: false,
+            depth: true,
+            stencil: false
+        });
+        
+        // Update session with the WebGL layer
+        await session.updateRenderState({
+            baseLayer: xrLayer
+        });
+
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
 
         renderer.setAnimationLoop(render);
-
         console.log("Sesión AR iniciada");
     } catch (err) {
         console.error("Error al iniciar AR:", err);
