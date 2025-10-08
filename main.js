@@ -8,12 +8,16 @@ function init() {
     // Configurar cámara
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
 
-    // Configurar renderer (sin crear canvas manualmente)
+    // Configurar renderer
     renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
-    document.body.appendChild(renderer.domElement);
+
+    // Marcar el contexto WebGL como compatible con XR
+    renderer.getContext().makeXRCompatible().then(() => {
+        document.body.appendChild(renderer.domElement);
+    });
 
     // Añadir luz
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
@@ -26,7 +30,7 @@ function init() {
     cube.position.set(0, 0, -0.5);
     scene.add(cube);
 
-    // Configurar soporte de WebXR
+    // Verificar soporte de WebXR
     if ('xr' in navigator) {
         navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
             const button = document.getElementById('enter-ar');
@@ -43,7 +47,7 @@ function init() {
         alert('WebXR no está disponible en este navegador');
     }
 
-    // Configurar el botón
+    // Configurar botón
     const button = document.getElementById('enter-ar');
     button.addEventListener('click', onStartAR);
 
@@ -51,9 +55,13 @@ function init() {
     window.addEventListener('resize', onWindowResize, false);
 }
 
+// Iniciar sesión AR
 async function onStartAR() {
     console.log('Iniciando sesión AR...');
     try {
+        // Asegurarse de que el contexto WebGL es compatible con XR
+        await renderer.getContext().makeXRCompatible();
+
         const session = await navigator.xr.requestSession('immersive-ar', {
             requiredFeatures: ['local', 'hit-test']
         });
@@ -61,7 +69,7 @@ async function onStartAR() {
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
 
-        // Three.js manejará automáticamente el fondo de cámara AR
+        // Three.js maneja automáticamente el fondo de cámara AR
         renderer.setAnimationLoop(render);
 
         console.log('Sesión AR iniciada');
@@ -71,12 +79,14 @@ async function onStartAR() {
     }
 }
 
+// Ajustar cámara y renderer al redimensionar ventana
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
+// Renderizado de la escena
 function render() {
     renderer.render(scene, camera);
 }
