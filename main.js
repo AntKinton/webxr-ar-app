@@ -14,16 +14,19 @@ function init() {
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
 
-    // Marcar el contexto WebGL como compatible con XR
+    // Agregar renderer al DOM **antes** de makeXRCompatible
+    document.body.appendChild(renderer.domElement);
+
+    // Marcar contexto como XR compatible
     renderer.getContext().makeXRCompatible().then(() => {
-        document.body.appendChild(renderer.domElement);
+        console.log("Contexto WebGL listo para XR");
     });
 
     // Añadir luz
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
     scene.add(light);
 
-    // Añadir un cubo de prueba
+    // Cubo de prueba
     const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
     const material = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
     const cube = new THREE.Mesh(geometry, material);
@@ -35,31 +38,28 @@ function init() {
         navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
             const button = document.getElementById('enter-ar');
             if (supported) {
-                console.log('WebXR AR está soportado');
+                console.log('WebXR AR soportado');
                 button.style.display = 'block';
             } else {
-                console.log('WebXR AR no está soportado');
+                console.log('WebXR AR NO soportado');
                 alert('La realidad aumentada no está soportada en este dispositivo');
             }
         });
-    } else {
-        console.log('WebXR no está disponible');
-        alert('WebXR no está disponible en este navegador');
     }
 
-    // Configurar botón
+    // Botón para entrar en AR
     const button = document.getElementById('enter-ar');
     button.addEventListener('click', onStartAR);
 
-    // Manejar redimensionado de ventana
+    // Redimensionado
     window.addEventListener('resize', onWindowResize, false);
 }
 
-// Iniciar sesión AR
 async function onStartAR() {
-    console.log('Iniciando sesión AR...');
     try {
-        // Asegurarse de que el contexto WebGL es compatible con XR
+        console.log("Iniciando sesión AR...");
+
+        // ⚠️ Esperar a que el contexto sea XR compatible
         await renderer.getContext().makeXRCompatible();
 
         const session = await navigator.xr.requestSession('immersive-ar', {
@@ -69,29 +69,26 @@ async function onStartAR() {
         renderer.xr.setReferenceSpaceType('local');
         await renderer.xr.setSession(session);
 
-        // Three.js maneja automáticamente el fondo de cámara AR
         renderer.setAnimationLoop(render);
 
-        console.log('Sesión AR iniciada');
-    } catch (error) {
-        console.error('Error al iniciar AR:', error);
-        alert('Error al iniciar AR: ' + error.message);
+        console.log("Sesión AR iniciada");
+    } catch (err) {
+        console.error("Error al iniciar AR:", err);
+        alert("Error al iniciar AR: " + err.message);
     }
 }
 
-// Ajustar cámara y renderer al redimensionar ventana
 function onWindowResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Renderizado de la escena
 function render() {
     renderer.render(scene, camera);
 }
 
-// Inicializar la escena cuando el documento esté listo
+// Inicializar cuando el documento esté listo
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
 } else {
