@@ -1,29 +1,19 @@
 let scene, camera, renderer;
-let controller1, controllerGrip1;
 
 // Inicializar la escena
 function init() {
     // Crear escena
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
-    
+
     // Configurar cámara
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
-    
-    // Configurar renderer
-    renderer = new THREE.WebGLRenderer({ 
-        antialias: true, 
-        alpha: true,
-        canvas: document.createElement('canvas')  // Asegura que se cree un nuevo canvas
-    });
+
+    // Configurar renderer (sin crear canvas manualmente)
+    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
-    
-    // Configurar el canal alfa para el renderizado AR
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.autoClear = false;  // Importante para el modo AR
 
     // Añadir luz
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
@@ -36,13 +26,13 @@ function init() {
     cube.position.set(0, 0, -0.5);
     scene.add(cube);
 
-    // Configurar WebXR
+    // Configurar soporte de WebXR
     if ('xr' in navigator) {
-        // Verificar soporte de WebXR
         navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
+            const button = document.getElementById('enter-ar');
             if (supported) {
                 console.log('WebXR AR está soportado');
-                document.getElementById('enter-ar').style.display = 'block';
+                button.style.display = 'block';
             } else {
                 console.log('WebXR AR no está soportado');
                 alert('La realidad aumentada no está soportada en este dispositivo');
@@ -65,23 +55,16 @@ async function onStartAR() {
     console.log('Iniciando sesión AR...');
     try {
         const session = await navigator.xr.requestSession('immersive-ar', {
-            requiredFeatures: ['local', 'hit-test'],  // Cambiado a requiredFeatures
-            optionalFeatures: ['dom-overlay']  // Opcional, para el overlay del DOM
+            requiredFeatures: ['local', 'hit-test']
         });
-        
-        console.log('Sesión AR iniciada');
-        
-        // Habilitar el fondo de la cámara
-        session.updateRenderState({
-            baseLayer: new XRWebGLLayer(session, renderer.getContext())
-        });
-        
+
         renderer.xr.setReferenceSpaceType('local');
-        renderer.xr.setSession(session);
-        
-        // Iniciar el bucle de renderizado
+        await renderer.xr.setSession(session);
+
+        // Three.js manejará automáticamente el fondo de cámara AR
         renderer.setAnimationLoop(render);
-        
+
+        console.log('Sesión AR iniciada');
     } catch (error) {
         console.error('Error al iniciar AR:', error);
         alert('Error al iniciar AR: ' + error.message);
@@ -95,7 +78,6 @@ function onWindowResize() {
 }
 
 function render() {
-    renderer.clearDepth();  // Limpiar solo el buffer de profundidad
     renderer.render(scene, camera);
 }
 
