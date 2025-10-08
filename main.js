@@ -11,11 +11,19 @@ function init() {
     camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 10);
     
     // Configurar renderer
-    renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    renderer = new THREE.WebGLRenderer({ 
+        antialias: true, 
+        alpha: true,
+        canvas: document.createElement('canvas')  // Asegura que se cree un nuevo canvas
+    });
     renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
+    
+    // Configurar el canal alfa para el renderizado AR
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.autoClear = false;  // Importante para el modo AR
 
     // Añadir luz
     const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
@@ -57,10 +65,18 @@ async function onStartAR() {
     console.log('Iniciando sesión AR...');
     try {
         const session = await navigator.xr.requestSession('immersive-ar', {
-            optionalFeatures: ['local-floor', 'bounded-floor', 'hit-test']
+            requiredFeatures: ['local', 'hit-test'],  // Cambiado a requiredFeatures
+            optionalFeatures: ['dom-overlay']  // Opcional, para el overlay del DOM
         });
         
         console.log('Sesión AR iniciada');
+        
+        // Habilitar el fondo de la cámara
+        session.updateRenderState({
+            baseLayer: new XRWebGLLayer(session, renderer.getContext())
+        });
+        
+        renderer.xr.setReferenceSpaceType('local');
         renderer.xr.setSession(session);
         
         // Iniciar el bucle de renderizado
@@ -78,8 +94,8 @@ function onWindowResize() {
     renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-// Bucle de renderizado
 function render() {
+    renderer.clearDepth();  // Limpiar solo el buffer de profundidad
     renderer.render(scene, camera);
 }
 
