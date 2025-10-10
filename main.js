@@ -150,13 +150,18 @@ async function onStartAR() {
       })
     });
 
-    // Configurar el espacio de referencia
-    const referenceSpace = await xrSession.requestReferenceSpace('local');
+    // Configurar el espacio de referencia con fallback
+    let referenceSpace;
+    try {
+      referenceSpace = await xrSession.requestReferenceSpace('local');
+    } catch (e) {
+      console.log('local reference space not supported, using viewer');
+      referenceSpace = await xrSession.requestReferenceSpace('viewer');
+    }
     
     // Inicializar hit test source
-    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
     hitTestSource = await xrSession.requestHitTestSource({
-      space: viewerSpace
+      space: referenceSpace
     });
 
     // Configurar el controlador
