@@ -1,181 +1,211 @@
-<html>
-  <head>
-    <meta charset='utf-8'>
-    <meta name='viewport' content='width=device-width, initial-scale=1, user-scalable=no'>
-    <meta name='mobile-web-app-capable' content='yes'>
-    <meta name='apple-mobile-web-app-capable' content='yes'>
-    <link rel='icon' type='image/png' sizes='32x32' href='favicon-32x32.png'>
-    <link rel='icon' type='image/png' sizes='96x96' href='favicon-96x96.png'>
-    <link rel='stylesheet' href='css/common.css'>
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
+  <title>WebXR Immersive AR — Ejemplo único fichero</title>
+  <style>
+    html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
+    #info {position:fixed;left:12px;top:12px;z-index:10;background:rgba(0,0,0,0.5);padding:10px;border-radius:8px;max-width:70vw}
+    button {font-size:16px;padding:8px 12px;border-radius:6px;border:0;background:#1976d2;color:white}
+    #enter-ar {display:inline-block}
+    canvas {display:block}
+    #instructions {margin-top:8px;font-size:13px;color:#ddd}
+    #message {position:fixed;left:12px;bottom:12px;background:rgba(0,0,0,0.6);padding:8px;border-radius:6px}
+  </style>
+</head>
+<body>
+  <div id="info">
+    <strong>WebXR Immersive AR — Demo</strong>
+    <div id="enter-ar"></div>
+    <div id="instructions">Apunta la cámara a una superficie plana. Toca la pantalla para colocar un cubo.</div>
+  </div>
+  <div id="message"></div>
 
-    <title>Immersive AR Session</title>
-  </head>
-  <body>
-    <header>
-      <details open>
-        <summary>Immersive AR Session</summary>
-        <p>
-          This sample demonstrates how to use an 'immersive-ar' XRSession to
-          present a simple WebGL scene to a transparent or passthrough XR
-          device. The logic is largely the same as the corresponding VR sample,
-          with the primary difference being that no background is rendered and
-          the model is scaled down for easier viewing in a real-world space.
-          <a class="back" href="./">Back</a>
-        </p>
-      </details>
-    </header>
-    <script type="module">
-      import {WebXRButton} from './js/util/webxr-button.js';
-      import {Scene} from './js/render/scenes/scene.js';
-      import {Renderer, createWebGLContext} from './js/render/core/renderer.js';
-      import {SkyboxNode} from './js/render/nodes/skybox.js';
-      import {InlineViewerHelper} from './js/util/inline-viewer-helper.js';
-      import {Gltf2Node} from './js/render/nodes/gltf2.js';
-      import {QueryArgs} from './js/util/query-args.js';
+  <!-- Three.js (módulo) + ejemplos WebXR (ARButton importado desde CDN) -->
+  <script type="module">
+  import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
+  import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js';
 
-      // If requested, use the polyfill to provide support for mobile devices
-      // and devices which only support WebVR.
-      import WebXRPolyfill from './js/third-party/webxr-polyfill/build/webxr-polyfill.module.js';
-      if (QueryArgs.getBool('usePolyfill', true)) {
-        let polyfill = new WebXRPolyfill();
+  const messageEl = document.getElementById('message');
+
+  function showMessage(txt, timeout=4000){
+    messageEl.textContent = txt;
+    if(timeout>0){
+      clearTimeout(showMessage._t);
+      showMessage._t = setTimeout(()=> messageEl.textContent = '', timeout);
+    }
+  }
+
+  // Verificación básica de soporte WebXR
+  if (navigator.xr === undefined) {
+    document.getElementById('enter-ar').innerHTML =
+      '<button disabled>No hay soporte WebXR en este navegador</button>';
+    showMessage('Tu navegador no expone navigator.xr — prueba Chrome en Android con WebXR/ARCore.');
+    throw new Error('No WebXR');
+  }
+
+  // Creamos escena, cámara, renderer
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera();
+  const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
+  renderer.setPixelRatio(window.devicePixelRatio);
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.xr.enabled = true;
+  document.body.appendChild(renderer.domElement);
+
+  // Luz
+  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
+  scene.add(light);
+
+  // Reticle (una malla que indica punto de impacto)
+  const reticleGeometry = new THREE.RingGeometry(0.06, 0.09, 32).rotateX(-Math.PI/2);
+  const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffcc, opacity: 0.9, transparent:true });
+  const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // Contenedor para objetos colocados
+  const placed = new THREE.Group();
+  scene.add(placed);
+
+  // Variables para hit-test
+  let hitTestSource = null;
+  let localReferenceSpace = null;
+
+  // Función para crear un cubo simple
+  function makeCube(){
+    const g = new THREE.BoxGeometry(0.12,0.12,0.12);
+    const m = new THREE.MeshStandardMaterial({ color: 0xff7043, metalness:0.2, roughness:0.7 });
+    const mesh = new THREE.Mesh(g,m);
+    return mesh;
+  }
+
+  // Botón AR (usa ARButton de three.js)
+  const arButton = ARButton.createButton(renderer, {
+    requiredFeatures: ['hit-test'],
+    optionalFeatures: []
+  });
+  document.getElementById('enter-ar').appendChild(arButton);
+
+  // When session starts we request a reference space and a hit-test source
+  renderer.xr.addEventListener('sessionstart', async () => {
+    const session = renderer.xr.getSession();
+    showMessage('Sesión AR iniciada', 2000);
+
+    // Request reference space used for rendering (local)
+    localReferenceSpace = await session.requestReferenceSpace('local');
+
+    // For hit-testing we need a "viewer" reference space and then requestHitTestSource
+    const viewerSpace = await session.requestReferenceSpace('viewer').catch(e=>{
+      console.warn('No viewer space:', e);
+      showMessage('No se pudo obtener viewer reference space', 4000);
+    });
+
+    if (viewerSpace) {
+      hitTestSource = await session.requestHitTestSource({ space: viewerSpace }).catch(e=>{
+        console.warn('No hit-test source:', e);
+        showMessage('hit-test no disponible en este dispositivo', 5000);
+      });
+    }
+
+    // On touch (screen) place an object where reticle is visible
+    const onSelect = () => {
+      if (reticle.visible) {
+        const cube = makeCube();
+        // Poner la malla en la posición y orientación de la reticle
+        cube.position.setFromMatrixPosition(reticle.matrix);
+        // Mantener la misma orientación horizontal que la reticle (opcional)
+        const m = new THREE.Matrix4().extractRotation(reticle.matrix);
+        cube.quaternion.setFromRotationMatrix(m);
+        placed.add(cube);
+      } else {
+        showMessage('Busca una superficie (mueve la cámara) hasta que aparezca la retícula.', 2500);
       }
+    };
 
-      // XR globals.
-      let xrButton = null;
-      let xrImmersiveRefSpace = null;
-      let inlineViewerHelper = null;
+    // Nos registramos para el evento select (trigger/tap)
+    session.addEventListener('select', onSelect);
 
-      // WebGL scene globals.
-      let gl = null;
-      let renderer = null;
-      let scene = new Scene();
-      let solarSystem = new Gltf2Node({url: 'media/gltf/space/space.gltf'});
-      // The solar system is big (citation needed). Scale it down so that users
-      // can move around the planets more easily.
-      solarSystem.scale = [0.1, 0.1, 0.1];
-      scene.addNode(solarSystem);
-      // Still adding a skybox, but only for the benefit of the inline view.
-      let skybox = new SkyboxNode({url: 'media/textures/milky-way-4k.png'});
-      scene.addNode(skybox);
+    // Guardar para limpiar después si se cierra
+    renderer.xr._myOnSelect = onSelect;
+  });
 
-      function initXR() {
-        xrButton = new WebXRButton({
-          onRequestSession: onRequestSession,
-          onEndSession: onEndSession,
-          textEnterXRTitle: "START AR",
-          textXRNotFoundTitle: "AR NOT FOUND",
-          textExitXRTitle: "EXIT  AR",
-        });
-        document.querySelector('header').appendChild(xrButton.domElement);
+  renderer.xr.addEventListener('sessionend', () => {
+    showMessage('Sesión AR finalizada', 2000);
+    // liberar hitTestSource
+    if (hitTestSource) {
+      hitTestSource.cancel();
+      hitTestSource = null;
+    }
+    localReferenceSpace = null;
+    // quitar listener select si existe
+    const session = renderer.xr.getSession();
+    if (session && renderer.xr._myOnSelect) {
+      session.removeEventListener('select', renderer.xr._myOnSelect);
+      delete renderer.xr._myOnSelect;
+    }
+  });
 
-        if (navigator.xr) {
-          // Checks to ensure that 'immersive-ar' mode is available, and only
-          // enables the button if so.
-          navigator.xr.isSessionSupported('immersive-ar').then((supported) => {
-            xrButton.enabled = supported;
-          });
+  // Resize
+  window.addEventListener('resize', () => {
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+  });
 
-          navigator.xr.requestSession('inline').then(onSessionStarted);
+  // Loop de render - usamos setAnimationLoop para WebXR
+  renderer.setAnimationLoop( (timestamp, xrFrame) => {
+    // xrFrame puede ser undefined cuando no estamos en XR
+    if (xrFrame && hitTestSource && localReferenceSpace) {
+      const hitTestResults = xrFrame.getHitTestResults(hitTestSource);
+      if (hitTestResults.length > 0) {
+        const hit = hitTestResults[0];
+        const pose = hit.getPose(localReferenceSpace);
+        if (pose) {
+          // Actualiza reticle con la matriz de pose
+          reticle.visible = true;
+          reticle.matrix.fromArray(pose.transform.matrix);
+        } else {
+          reticle.visible = false;
         }
+      } else {
+        reticle.visible = false;
       }
+    }
 
-      function onRequestSession() {
-        // Requests an 'immersive-ar' session, which ensures that the users
-        // environment will be visible either via video passthrough or a
-        // transparent display. This may be presented either in a headset or
-        // fullscreen on a mobile device.
-        return navigator.xr.requestSession('immersive-ar')
-            .then((session) => {
-              xrButton.setSession(session);
-              session.isImmersive = true;
-              onSessionStarted(session);
-            });
+    // Renderizar escena
+    renderer.render(scene, camera);
+  });
+
+  // detecta "tap" en pantalla para generar evento select si no hay controlador físico
+  // (muchos dispositivos emitirán 'select' automáticamente, pero añadimos un toque extra)
+  renderer.domElement.addEventListener('click', (ev) => {
+    const session = renderer.xr.getSession();
+    if (session) {
+      // Dispatch a generic select event for session
+      const evt = new Event('select');
+      session.dispatchEvent(evt);
+    }
+  });
+
+  // Mensaje contextual sobre compatibilidad / recursos
+  showMessage('Comprobando compatibilidad WebXR...');
+
+  // Comprueba más finamente si 'immersive-ar' está soportado
+  navigator.xr.isSessionSupported && navigator.xr.isSessionSupported('immersive-ar')
+    .then(supported => {
+      if (!supported) {
+        showMessage('Immersive AR no soportado en este dispositivo/navegador.', 6000);
+      } else {
+        showMessage('Immersive AR soportado — pulsa "Enter AR".', 3000);
       }
+    }).catch(err=>{
+      console.warn('isSessionSupported error', err);
+      // no hacemos nada extra: ARButton ya maneja fallback
+    });
 
-      function initGL() {
-        if (gl)
-          return;
-
-        gl = createWebGLContext({
-          xrCompatible: true
-        });
-        document.body.appendChild(gl.canvas);
-
-        function onResize() {
-          gl.canvas.width = gl.canvas.clientWidth * window.devicePixelRatio;
-          gl.canvas.height = gl.canvas.clientHeight * window.devicePixelRatio;
-        }
-        window.addEventListener('resize', onResize);
-        onResize();
-
-        renderer = new Renderer(gl);
-
-        scene.setRenderer(renderer);
-      }
-
-      function onSessionStarted(session) {
-        session.addEventListener('end', onSessionEnded);
-
-        if (session.isImmersive) {
-          // When in 'immersive-ar' mode don't draw an opaque background because
-          // we want the real world to show through.
-          skybox.visible = false;
-        }
-
-        initGL();
-
-        session.updateRenderState({ baseLayer: new XRWebGLLayer(session, gl) });
-
-        let refSpaceType = session.isImmersive ? 'local' : 'viewer';
-        session.requestReferenceSpace(refSpaceType).then((refSpace) => {
-          if (session.isImmersive) {
-            xrImmersiveRefSpace = refSpace;
-
-            xrImmersiveRefSpace.addEventListener('reset', (evt) => {
-              if (evt.transform) {
-                // AR experiences typically should stay grounded to the real world.
-                // If there's a known origin shift, compensate for it here.
-                xrImmersiveRefSpace = xrImmersiveRefSpace.getOffsetReferenceSpace(evt.transform);
-              }
-            });
-          } else {
-            inlineViewerHelper = new InlineViewerHelper(gl.canvas, refSpace);
-          }
-          session.requestAnimationFrame(onXRFrame);
-        });
-      }
-
-      function onEndSession(session) {
-        session.end();
-      }
-
-      function onSessionEnded(event) {
-        if (event.session.isImmersive) {
-          xrButton.setSession(null);
-          // Turn the background back on when we go back to the inlive view.
-          skybox.visible = true;
-        }
-      }
-
-      // Called every time a XRSession requests that a new frame be drawn.
-      function onXRFrame(t, frame) {
-        let session = frame.session;
-        let refSpace = session.isImmersive ?
-                         xrImmersiveRefSpace :
-                         inlineViewerHelper.referenceSpace;
-        let pose = frame.getViewerPose(refSpace);
-
-        scene.startFrame();
-
-        session.requestAnimationFrame(onXRFrame);
-
-        scene.drawXRFrame(frame, pose);
-
-        scene.endFrame();
-      }
-
-      // Start the XR application.
-      initXR();
-    </script>
-  </body>
+  </script>
+</body>
 </html>
