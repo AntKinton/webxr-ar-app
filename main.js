@@ -25,16 +25,8 @@ function init() {
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.xr.enabled = true;
 
-  // Agregar renderer al DOM **antes** de makeXRCompatible
+  // Agregar renderer al DOM
   document.body.appendChild(renderer.domElement);
-
-  // Marcar contexto como XR compatible
-  renderer
-    .getContext()
-    .makeXRCompatible()
-    .then(() => {
-      console.log("Contexto WebGL listo para XR");
-    });
 
   // Configurar luces
   const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
@@ -127,48 +119,41 @@ async function onStartAR() {
     console.log("Iniciando sesión AR...");
     document.getElementById('enter-ar').style.display = 'none';
 
-    // Ensure WebGL context is XR compatible
-    await renderer.getContext().makeXRCompatible();
-
+    // Configuración simplificada de la sesión AR
     xrSession = await navigator.xr.requestSession("immersive-ar", {
       requiredFeatures: ['hit-test'],
       optionalFeatures: ['dom-overlay'],
       domOverlay: { root: document.body }
     });
 
-    // Configurar la capa de renderizado WebXR
-    const gl = renderer.getContext();
-    await gl.makeXRCompatible();
-    
-    xrSession.updateRenderState({
-      baseLayer: new XRWebGLLayer(xrSession, gl, {
-        alpha: true,
-        antialias: true,
-        depth: true,
-        stencil: false,
-        framebufferScaleFactor: 1.0
-      })
-    });
+    // Configurar el renderer para XR
+    await renderer.xr.setSession(xrSession);
 
-    // Configurar el espacio de referencia con múltiples fallbacks
+    // Solicitar espacio de referencia de manera más robusta
     let referenceSpace;
-    const referenceSpaceTypes = ['local-floor', 'local', 'viewer', 'unbounded'];
     
-    for (const type of referenceSpaceTypes) {
+    try {
+      // Primero intentar con 'viewer' que es el más compatible
+      referenceSpace = await xrSession.requestReferenceSpace('viewer');
+      console.log("Usando espacio de referencia: viewer");
+    } catch (e) {
+      console.log("Viewer reference space no soportado, intentando local...");
       try {
-        referenceSpace = await xrSession.requestReferenceSpace(type);
-        console.log(`Using reference space: ${type}`);
-        break;
-      } catch (e) {
-        console.log(`${type} reference space not supported`);
+        referenceSpace = await xrSession.requestReferenceSpace('local');
+        console.log("Usando espacio de referencia: local");
+      } catch (e2) {
+        console.log("Local reference space no soportado, intentando local-floor...");
+        try {
+          referenceSpace = await xrSession.requestReferenceSpace('local-floor');
+          console.log("Usando espacio de referencia: local-floor");
+        } catch (e3) {
+          console.error("No se pudo obtener ningún espacio de referencia compatible");
+          throw new Error('Este dispositivo no soporta los espacios de referencia necesarios para AR');
+        }
       }
     }
-    
-    if (!referenceSpace) {
-      throw new Error('No compatible reference space found');
-    }
-    
-    // Inicializar hit test source
+
+    // Inicializar hit test source usando el espacio de referencia obtenido
     hitTestSource = await xrSession.requestHitTestSource({
       space: referenceSpace
     });
@@ -179,7 +164,6 @@ async function onStartAR() {
     scene.add(controller);
 
     // Iniciar el bucle de renderizado
-    await renderer.xr.setSession(xrSession);
     renderer.setAnimationLoop(onXRFrame);
     
     // Mostrar controles e instrucciones
@@ -187,10 +171,13 @@ async function onStartAR() {
     document.getElementById('instructions').classList.remove('hidden');
     updateInstructions('Mueve el dispositivo para detectar superficies');
     
-    console.log("Sesión AR iniciada");
+    console.log("Sesión AR iniciada correctamente");
   } catch (err) {
     console.error("Error al iniciar AR:", err);
     alert("Error al iniciar AR: " + err.message);
+    
+    // Restaurar el botón en caso de error
+    document.getElementById('enter-ar').style.display = 'block';
   }
 }
 
