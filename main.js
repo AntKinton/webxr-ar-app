@@ -150,13 +150,22 @@ async function onStartAR() {
       })
     });
 
-    // Configurar el espacio de referencia con fallback
+    // Configurar el espacio de referencia con múltiples fallbacks
     let referenceSpace;
-    try {
-      referenceSpace = await xrSession.requestReferenceSpace('local');
-    } catch (e) {
-      console.log('local reference space not supported, using viewer');
-      referenceSpace = await xrSession.requestReferenceSpace('viewer');
+    const referenceSpaceTypes = ['local-floor', 'local', 'viewer', 'unbounded'];
+    
+    for (const type of referenceSpaceTypes) {
+      try {
+        referenceSpace = await xrSession.requestReferenceSpace(type);
+        console.log(`Using reference space: ${type}`);
+        break;
+      } catch (e) {
+        console.log(`${type} reference space not supported`);
+      }
+    }
+    
+    if (!referenceSpace) {
+      throw new Error('No compatible reference space found');
     }
     
     // Inicializar hit test source
