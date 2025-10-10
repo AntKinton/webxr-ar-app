@@ -131,7 +131,7 @@ async function onStartAR() {
     await renderer.getContext().makeXRCompatible();
 
     xrSession = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ['viewer', 'local', 'hit-test'],
+      requiredFeatures: ['hit-test'],
       optionalFeatures: ['dom-overlay'],
       domOverlay: { root: document.body }
     });
@@ -152,13 +152,11 @@ async function onStartAR() {
 
     // Configurar el espacio de referencia
     const referenceSpace = await xrSession.requestReferenceSpace('local');
-    xrSession.depthUsage = 'cpu-optimized';
     
     // Inicializar hit test source
     const viewerSpace = await xrSession.requestReferenceSpace('viewer');
     hitTestSource = await xrSession.requestHitTestSource({
-      space: viewerSpace,
-      entityTypes: ['plane', 'mesh']
+      space: viewerSpace
     });
 
     // Configurar el controlador
@@ -167,8 +165,7 @@ async function onStartAR() {
     scene.add(controller);
 
     // Iniciar el bucle de renderizado
-    renderer.xr.setReferenceSpace(referenceSpace);
-    renderer.xr.setSession(xrSession);
+    await renderer.xr.setSession(xrSession);
     renderer.setAnimationLoop(onXRFrame);
     
     // Mostrar controles e instrucciones
