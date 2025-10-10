@@ -1,4 +1,6 @@
-let scene, camera, renderer;
+let scene, camera, renderer, controller, reticle, hitTestSource = null;
+let cube = null;
+let xrSession = null;
 
 // Inicializar la escena
 function init() {
@@ -30,18 +32,31 @@ function init() {
       console.log("Contexto WebGL listo para XR");
     });
 
-  // Añadir luz
-  const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
-  scene.add(light);
+  // Configurar luces
+  const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
+  scene.add(ambientLight);
+  
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+  directionalLight.position.set(1, 1, 1);
+  scene.add(directionalLight);
 
-  // Cubo de prueba
-  const geometry = new THREE.BoxGeometry(0.3, 0.3, 0.3); // Tamaño aumentado
-  const material = new THREE.MeshBasicMaterial({
+  // Crear retícula para indicar superficie detectada
+  const reticleGeometry = new THREE.RingGeometry(0.1, 0.11, 24).rotateX(-Math.PI / 2);
+  const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
+  reticle.matrixAutoUpdate = false;
+  reticle.visible = false;
+  scene.add(reticle);
+
+  // Crear cubo (inicialmente oculto)
+  const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+  const material = new THREE.MeshStandardMaterial({
     color: 0x00ff00,
-    wireframe: true, // Añadido para mejor visibilidad
+    roughness: 0.5,
+    metalness: 0.5,
   });
-  const cube = new THREE.Mesh(geometry, material);
-  cube.position.set(0, 0, -1.5); // Movido más lejos de la cámara
+  cube = new THREE.Mesh(geometry, material);
+  cube.visible = false;
   scene.add(cube);
 
   // Verificar soporte de WebXR
@@ -69,32 +84,52 @@ function init() {
 async function onStartAR() {
   try {
     console.log("Iniciando sesión AR...");
+    document.getElementById('enter-ar').style.display = 'none';
 
     // Ensure WebGL context is XR compatible
     await renderer.getContext().makeXRCompatible();
 
-    const session = await navigator.xr.requestSession("immersive-ar", {
-      requiredFeatures: ["local", "hit-test"],
+    xrSession = await navigator.xr.requestSession("immersive-ar", {
+      requiredFeatures: ['viewer', 'local', 'hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: document.body }
     });
 
-    // Create and configure WebGL layer for WebXR
+    // Configurar la capa de renderizado WebXR
     const gl = renderer.getContext();
-    const xrLayer = new XRWebGLLayer(session, gl, {
-      alpha: true,
-      antialias: false,
-      depth: true,
-      stencil: false,
+    await gl.makeXRCompatible();
+    
+    xrSession.updateRenderState({
+      baseLayer: new XRWebGLLayer(xrSession, gl, {
+        alpha: true,
+        antialias: true,
+        depth: true,
+        stencil: false,
+        framebufferScaleFactor: 1.0
+      })
     });
 
-    // Update session with the WebGL layer
-    await session.updateRenderState({
-      baseLayer: xrLayer,
+    // Configurar el espacio de referencia
+    const referenceSpace = await xrSession.requestReferenceSpace('local');
+    xrSession.depthUsage = 'cpu-optimized';
+    
+    // Inicializar hit test source
+    const viewerSpace = await xrSession.requestReferenceSpace('viewer');
+    hitTestSource = await xrSession.requestHitTestSource({
+      space: viewerSpace,
+      entityTypes: ['plane', 'mesh']
     });
 
-    renderer.xr.setReferenceSpaceType("local");
-    await renderer.xr.setSession(session);
+    // Configurar el controlador
+    controller = renderer.xr.getController(0);
+    controller.addEventListener('select', onSelect);
+    scene.add(controller);
 
-    renderer.setAnimationLoop(render);
+    // Iniciar el bucle de renderizado
+    renderer.xr.setReferenceSpace(referenceSpace);
+    renderer.xr.setSession(xrSession);
+    renderer.setAnimationLoop(onXRFrame);
+    
     console.log("Sesión AR iniciada");
   } catch (err) {
     console.error("Error al iniciar AR:", err);
@@ -108,7 +143,34 @@ function onWindowResize() {
   renderer.setSize(window.innerWidth, window.innerHeight);
 }
 
-function render() {
+function onSelect() {
+  if (reticle.visible && !cube.visible) {
+    cube.position.copy(reticle.position);
+    cube.quaternion.copy(reticle.quaternion);
+    cube.visible = true;
+  }
+}
+
+function onXRFrame(time, frame) {
+  if (!xrSession) return;
+  
+  const referenceSpace = renderer.xr.getReferenceSpace();
+  const session = renderer.xr.getSession();
+  
+  if (hitTestSource && frame) {
+    const hitTestResults = frame.getHitTestResults(hitTestSource);
+    
+    if (hitTestResults.length > 0) {
+      const hit = hitTestResults[0];
+      const pose = hit.getPose(referenceSpace);
+      
+      reticle.visible = true;
+      reticle.matrix.fromArray(pose.transform.matrix);
+    } else {
+      reticle.visible = false;
+    }
+  }
+  
   renderer.render(scene, camera);
 }
 
