@@ -9,6 +9,39 @@
 <body>
     <button id="enter-ar">Entrar en AR</button>
     
+    <!-- Mensaje de instrucciones -->
+    <div id="instructions" class="hidden">
+        <p id="instruction-text">Mueve el dispositivo para detectar superficies</p>
+    </div>
+    
+    <!-- Panel de control de objetos -->
+    <div id="controls" class="hidden">
+        <div class="control-section">
+            <label>Forma:</label>
+            <div class="button-group">
+                <button class="shape-btn active" data-shape="cube">Cubo</button>
+                <button class="shape-btn" data-shape="sphere">Esfera</button>
+                <button class="shape-btn" data-shape="cylinder">Cilindro</button>
+            </div>
+        </div>
+        
+        <div class="control-section">
+            <label>Color:</label>
+            <div class="button-group">
+                <button class="color-btn active" data-color="0x00ff00" style="background-color: #00ff00;"></button>
+                <button class="color-btn" data-color="0xff0000" style="background-color: #ff0000;"></button>
+                <button class="color-btn" data-color="0x0000ff" style="background-color: #0000ff;"></button>
+                <button class="color-btn" data-color="0xffff00" style="background-color: #ffff00;"></button>
+                <button class="color-btn" data-color="0xff00ff" style="background-color: #ff00ff;"></button>
+                <button class="color-btn" data-color="0x00ffff" style="background-color: #00ffff;"></button>
+            </div>
+        </div>
+        
+        <div class="control-section">
+            <button id="clear-all" class="action-btn">Borrar Todos</button>
+        </div>
+    </div>
+    
     <!-- Three.js -->
     <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
     <!-- Módulos de WebXR para Three.js -->
