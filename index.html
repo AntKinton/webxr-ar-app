@@ -3,14 +3,13 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1.0,viewport-fit=cover" />
-  <title>WebXR Immersive AR — Ejemplo único fichero</title>
+  <title>WebXR Immersive AR — Figuras Interactivas</title>
   <style>
     html,body{height:100%;margin:0;background:#000;color:#fff;font-family:system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial}
     #info {position:fixed;left:16px;top:16px;z-index:10;background:rgba(0,0,0,0.75);padding:16px;border-radius:8px;max-width:calc(100vw - 64px);box-sizing:border-box}
     #info strong {display:block;margin-bottom:12px;font-size:16px}
-    button {font-size:16px;padding:10px 16px;border-radius:6px;border:0;background:#1976d2;color:white;cursor:pointer;width:100%;max-width:280px}
+    button {font-size:16px;padding:10px 16px;border-radius:6px;border:0;background:#1976d2;color:white;cursor:pointer;width:100%;max-width:280px;margin-top:6px}
     button:disabled {background:#555;cursor:not-allowed;opacity:0.7}
-    #enter-ar {display:block;margin-top:4px}
     canvas {display:block}
     #instructions {margin-top:12px;font-size:14px;color:#ddd;line-height:1.5;max-width:320px}
     #message {position:fixed;left:16px;bottom:16px;right:16px;background:rgba(0,0,0,0.75);padding:12px 16px;border-radius:6px;font-size:14px;max-width:calc(100vw - 64px);box-sizing:border-box;z-index:5}
@@ -18,18 +17,22 @@
 </head>
 <body>
   <div id="info">
-    <strong>WebXR Immersive AR — Demo</strong>
+    <strong>WebXR Immersive AR — Figuras Interactivas</strong>
     <div id="enter-ar"></div>
-    <div id="instructions">Apunta la cámara a una superficie plana. Toca la pantalla para colocar un cubo.</div>
+    <button id="toggle-shape">Shape: Cube</button>
+    <button id="clear-all">Clear All</button>
+    <div id="instructions">Apunta la cámara a una superficie plana. Toca para colocar o eliminar una figura.</div>
   </div>
   <div id="message"></div>
 
-  <!-- Three.js (módulo) + ejemplos WebXR (ARButton importado desde CDN) -->
   <script type="module">
   import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js';
   import { ARButton } from 'https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/webxr/ARButton.js';
 
   const messageEl = document.getElementById('message');
+  const toggleBtn = document.getElementById('toggle-shape');
+  const clearBtn = document.getElementById('clear-all');
+  let currentShape = 'cube';
 
   function showMessage(txt, timeout=4000){
     messageEl.textContent = txt;
@@ -39,7 +42,6 @@
     }
   }
 
-  // Verificación básica de soporte WebXR
   if (navigator.xr === undefined) {
     document.getElementById('enter-ar').innerHTML =
       '<button disabled>No hay soporte WebXR en este navegador</button>';
@@ -47,7 +49,6 @@
     throw new Error('No WebXR');
   }
 
-  // Creamos escena, cámara, renderer
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera();
   const renderer = new THREE.WebGLRenderer({ antialias:true, alpha:true });
@@ -56,11 +57,9 @@
   renderer.xr.enabled = true;
   document.body.appendChild(renderer.domElement);
 
-  // Luz
   const light = new THREE.HemisphereLight(0xffffff, 0xbbbbff, 1);
   scene.add(light);
 
-  // Reticle (una malla que indica punto de impacto)
   const reticleGeometry = new THREE.RingGeometry(0.06, 0.09, 32).rotateX(-Math.PI/2);
   const reticleMaterial = new THREE.MeshBasicMaterial({ color: 0x00ffcc, opacity: 0.9, transparent:true });
   const reticle = new THREE.Mesh(reticleGeometry, reticleMaterial);
@@ -68,38 +67,66 @@
   reticle.visible = false;
   scene.add(reticle);
 
-  // Contenedor para objetos colocados
   const placed = new THREE.Group();
   scene.add(placed);
 
-  // Variables para hit-test
   let hitTestSource = null;
   let localReferenceSpace = null;
+  const raycaster = new THREE.Raycaster();
+  const tapPosition = new THREE.Vector2();
 
-  // Función para crear un cubo simple
+  // === Generadores de figuras ===
   function makeCube(){
     const g = new THREE.BoxGeometry(0.12,0.12,0.12);
     const m = new THREE.MeshStandardMaterial({ color: 0xff7043, metalness:0.2, roughness:0.7 });
-    const mesh = new THREE.Mesh(g,m);
-    return mesh;
+    return new THREE.Mesh(g,m);
   }
 
-  // Botón AR (usa ARButton de three.js)
+  function makeSphere(){
+    const g = new THREE.SphereGeometry(0.08, 32, 16);
+    const m = new THREE.MeshStandardMaterial({ color: 0x29b6f6, metalness:0.2, roughness:0.6 });
+    return new THREE.Mesh(g,m);
+  }
+
+  function makePyramid(){
+    const g = new THREE.ConeGeometry(0.09, 0.14, 4);
+    const m = new THREE.MeshStandardMaterial({ color: 0xab47bc, metalness:0.2, roughness:0.7 });
+    return new THREE.Mesh(g,m);
+  }
+
+  function makeShape(){
+    switch(currentShape){
+      case 'sphere': return makeSphere();
+      case 'pyramid': return makePyramid();
+      default: return makeCube();
+    }
+  }
+
+  // === Botones ===
+  toggleBtn.addEventListener('click', ()=>{
+    if (currentShape === 'cube') currentShape = 'sphere';
+    else if (currentShape === 'sphere') currentShape = 'pyramid';
+    else currentShape = 'cube';
+    toggleBtn.textContent = `Shape: ${currentShape[0].toUpperCase() + currentShape.slice(1)}`;
+  });
+
+  clearBtn.addEventListener('click', ()=>{
+    placed.clear();
+    showMessage('Todas las figuras eliminadas.', 2000);
+  });
+
+  // === AR Button ===
   const arButton = ARButton.createButton(renderer, {
     requiredFeatures: ['hit-test'],
     optionalFeatures: []
   });
   document.getElementById('enter-ar').appendChild(arButton);
 
-  // When session starts we request a reference space and a hit-test source
   renderer.xr.addEventListener('sessionstart', async () => {
     const session = renderer.xr.getSession();
     showMessage('Sesión AR iniciada', 2000);
 
-    // Request reference space used for rendering (local)
     localReferenceSpace = await session.requestReferenceSpace('local');
-
-    // For hit-testing we need a "viewer" reference space and then requestHitTestSource
     const viewerSpace = await session.requestReferenceSpace('viewer').catch(e=>{
       console.warn('No viewer space:', e);
       showMessage('No se pudo obtener viewer reference space', 4000);
@@ -112,37 +139,53 @@
       });
     }
 
-    // On touch (screen) place an object where reticle is visible
-    const onSelect = () => {
-      if (reticle.visible) {
-        const cube = makeCube();
-        // Poner la malla en la posición y orientación de la reticle
-        cube.position.setFromMatrixPosition(reticle.matrix);
-        // Mantener la misma orientación horizontal que la reticle (opcional)
-        const m = new THREE.Matrix4().extractRotation(reticle.matrix);
-        cube.quaternion.setFromRotationMatrix(m);
-        placed.add(cube);
-      } else {
-        showMessage('Busca una superficie (mueve la cámara) hasta que aparezca la retícula.', 2500);
+    const onSelect = (ev) => {
+      if (!reticle.visible) {
+        showMessage('Mueve la cámara hasta detectar una superficie.', 2000);
+        return;
       }
+
+      // Si tocamos una figura, la eliminamos
+      if (ev.inputSource && ev.inputSource.targetRayMode === 'screen') {
+        const x = ev.inputSource.gamepad?.axes[0] || 0;
+        const y = ev.inputSource.gamepad?.axes[1] || 0;
+      }
+
+      // Verifica si el toque coincide con algún objeto existente
+      const session = renderer.xr.getSession();
+      const viewerPose = ev.frame.getViewerPose(localReferenceSpace);
+      if (!viewerPose) return;
+      const view = viewerPose.views[0];
+      const viewport = renderer.xr.getViewport(view);
+      tapPosition.x = 0; tapPosition.y = 0; // central (no usamos coordenadas táctiles reales)
+      raycaster.setFromCamera(tapPosition, camera);
+      const intersects = raycaster.intersectObjects(placed.children, false);
+      if (intersects.length > 0) {
+        const obj = intersects[0].object;
+        placed.remove(obj);
+        showMessage('Figura eliminada.', 1500);
+        return;
+      }
+
+      // Si no toca una figura, crea la nueva
+      const shape = makeShape();
+      shape.position.setFromMatrixPosition(reticle.matrix);
+      const m = new THREE.Matrix4().extractRotation(reticle.matrix);
+      shape.quaternion.setFromRotationMatrix(m);
+      placed.add(shape);
     };
 
-    // Nos registramos para el evento select (trigger/tap)
     session.addEventListener('select', onSelect);
-
-    // Guardar para limpiar después si se cierra
     renderer.xr._myOnSelect = onSelect;
   });
 
   renderer.xr.addEventListener('sessionend', () => {
     showMessage('Sesión AR finalizada', 2000);
-    // liberar hitTestSource
     if (hitTestSource) {
       hitTestSource.cancel();
       hitTestSource = null;
     }
     localReferenceSpace = null;
-    // quitar listener select si existe
     const session = renderer.xr.getSession();
     if (session && renderer.xr._myOnSelect) {
       session.removeEventListener('select', renderer.xr._myOnSelect);
@@ -150,23 +193,19 @@
     }
   });
 
-  // Resize
   window.addEventListener('resize', () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
   });
 
-  // Loop de render - usamos setAnimationLoop para WebXR
-  renderer.setAnimationLoop( (timestamp, xrFrame) => {
-    // xrFrame puede ser undefined cuando no estamos en XR
+  renderer.setAnimationLoop((timestamp, xrFrame) => {
     if (xrFrame && hitTestSource && localReferenceSpace) {
       const hitTestResults = xrFrame.getHitTestResults(hitTestSource);
       if (hitTestResults.length > 0) {
         const hit = hitTestResults[0];
         const pose = hit.getPose(localReferenceSpace);
         if (pose) {
-          // Actualiza reticle con la matriz de pose
           reticle.visible = true;
           reticle.matrix.fromArray(pose.transform.matrix);
         } else {
@@ -176,26 +215,18 @@
         reticle.visible = false;
       }
     }
-
-    // Renderizar escena
     renderer.render(scene, camera);
   });
 
-  // detecta "tap" en pantalla para generar evento select si no hay controlador físico
-  // (muchos dispositivos emitirán 'select' automáticamente, pero añadimos un toque extra)
   renderer.domElement.addEventListener('click', (ev) => {
     const session = renderer.xr.getSession();
     if (session) {
-      // Dispatch a generic select event for session
       const evt = new Event('select');
       session.dispatchEvent(evt);
     }
   });
 
-  // Mensaje contextual sobre compatibilidad / recursos
   showMessage('Comprobando compatibilidad WebXR...');
-
-  // Comprueba más finamente si 'immersive-ar' está soportado
   navigator.xr.isSessionSupported && navigator.xr.isSessionSupported('immersive-ar')
     .then(supported => {
       if (!supported) {
@@ -205,7 +236,6 @@
       }
     }).catch(err=>{
       console.warn('isSessionSupported error', err);
-      // no hacemos nada extra: ARButton ya maneja fallback
     });
 
   </script>
